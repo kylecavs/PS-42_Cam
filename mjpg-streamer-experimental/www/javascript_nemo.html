@@ -1,0 +1,165 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>MJPEG-Streamer</title>
+<script src="./js-objectdetect/js/objectdetect.js"></script>
+<script src="StackBlur.js"></script>
+<script src="Sharpen.js"></script>
+<script type="text/javascript" src="/jquery.js"></script>
+<script>
+	window.onload = function() {
+		var canvas = document.getElementById('canvas');
+		var context = canvas.getContext('2d');
+		var size = 480;
+		var detector;
+		var grey;
+		
+		function detectFaces(canvas) {
+			// Detect faces in the image:
+			var rects = detector.detect(canvas);
+			
+			// Draw rectangles around detected faces:
+			for (var i = 0; i < rects.length; ++i) {
+				var coord = rects[i];
+				context.beginPath();
+				context.lineWidth = '' + coord[4] * .5;
+				context.strokeStyle = 'rgba(0, 255, 255, 0.75)';
+				context.rect(coord[0], coord[1], coord[2], coord[3]);
+				context.stroke();
+			}
+		}
+		
+		function loadImage(src) {
+			image = new Image();
+			image.onload = function() {
+				$.ajax({
+   					url: "http://192.168.1.192:5000/is_running",
+  		 			type: "post"
+			
+				});
+				canvas.width = ~~(size * image.width / image.height);
+				canvas.height = ~~(size);
+				context.drawImage(image, 0, 0, canvas.width, canvas.height);
+				grayScale(context, canvas);
+				var imgData = context.getImageData(0, 0, canvas.width, canvas.height);
+				sharpen(context, canvas.width, canvas.height, 5);
+				stackBlurCanvasRGB( 'canvas', 0, 0, canvas.width, canvas.height, 5 );
+				edgeDetect();
+				//sharpen(context, canvas.width, canvas.height, 5);
+				loadImage("/?action=snapshot");
+			}
+			
+			image.src = src;
+		}
+		
+    		function grayScale(context, canvas) {
+			var imgData = context.getImageData(0, 0, canvas.width, canvas.height);
+            		var pixels  = imgData.data;
+            		for (var i = 0, n = pixels.length; i < n; i += 4) {
+            			var grayscale = pixels[i] * .3 + pixels[i+1] * .59 + pixels[i+2] * .11;
+            			pixels[i  ] = grayscale;        // red
+            			pixels[i+1] = grayscale;        // green
+            			pixels[i+2] = grayscale;        // blue
+            			//pixels[i+3]              is alpha
+			}
+    			//redraw the image in black & white
+    			context.putImageData(imgData, 0, 0);
+  		}
+		
+		function edgeDetect(){
+			// get the image data to manipulate
+    			var input = context.getImageData(0, 0, canvas.width, canvas.height);
+			// get an empty slate to put the data into
+		       var output = context.createImageData(canvas.width, canvas.height);
+
+		       // alias some variables for convenience
+		       // notice that we are using input.width and input.height here
+		       // as they might not be the same as canvas.width and canvas.height
+		       // (in particular, they might be different on high-res displays)
+		       var w = input.width, h = input.height;
+		       var inputData = input.data;
+		       var outputData = output.data;
+
+		       // edge detection
+		       for (var y = 1; y < h-1; y += 1) {
+			 for (var x = 1; x < w-1; x += 1) {
+        		   for (var c = 0; c < 3; c += 1) {
+        		     var i = (y*w + x)*4 + c;
+        		     outputData[i] = 127 + -inputData[i - w*4 - 4] -   inputData[i - w*4] - inputData[i - w*4 + 4] +
+                                		   -inputData[i - 4]       + 8*inputData[i]       - inputData[i + 4] +
+                                		   -inputData[i + w*4 - 4] -   inputData[i + w*4] - inputData[i + w*4 + 4];
+        		   }
+        		   outputData[(y*w + x)*4 + 3] = 255; // alpha
+			 }
+		       }
+
+		       // put the image data back after manipulation
+		       context.putImageData(output, 0, 0);
+		}
+		
+		 
+
+		loadImage("/?action=snapshot");
+	}
+    </script>
+</head>
+<script type="text/javascript">
+
+/* Copyright (C) 2007 Richard Atterer, richard©atterer.net
+   This program is free software; you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2. See the file
+   COPYING for details. */
+
+var imageNr = 0; // Serial number of current image
+var finished = new Array(); // References to img objects which have finished downloading
+var paused = false;
+
+var canvas = document.getElementById('canvas');
+var context = canvas.getContext('2d');
+var size = 250;
+var detector;
+var classifier = objectdetect.frontalface;
+
+function createImageLayer() {
+  var img = new Image();
+  img.style.position = "absolute";
+  img.style.zIndex = -1;
+  img.onload = imageOnload;
+  img.onclick = imageOnclick;
+  img.src = "/?action=snapshot&n=" + (++imageNr);
+  var webcam = document.getElementById("webcam");
+  webcam.insertBefore(img, webcam.firstChild);
+}
+
+// Two layers are always present (except at the very beginning), to avoid flicker
+function imageOnload() {
+  this.style.zIndex = imageNr; // Image finished, bring to front!
+  while (1 < finished.length) {
+    var del = finished.shift(); // Delete old image(s) from document
+    del.parentNode.removeChild(del);
+  }
+  finished.push(this);
+  if (!paused) createImageLayer();
+}
+
+function imageOnclick() { // Clicking on the image will pause the stream
+  paused = !paused;
+  if (!paused) createImageLayer();
+}
+
+
+
+
+
+</script>
+<body onload="createImageLayer();">
+
+<p><canvas id="canvas"></canvas></p>
+ <div id="content">
+      <h1>Welcome</h1>
+</div>
+<div id="webcam"><noscript><img src="/?action=snapshot" /></noscript></div>
+
+</body>
+</html>
